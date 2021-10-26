@@ -77,8 +77,8 @@ mySpectrogram(t,spectFreq,totalSpect,numClasses,vizChans,EEG_chans)
 %% Common Spatial Patterns
 % create a spatial filter using available EEG & labels
 % begin by splitting into two classes:
-leftClass = MIData(targetLabels == 2,:,:);
-rightClass = MIData(targetLabels == 3,:,:);
+leftClass = MIData(targetLabels == 1,:,:);
+rightClass = MIData(targetLabels == 2,:,:);
 % aggregate all trials into one matrix
 overallLeft = [];
 overallRight = [];
@@ -86,22 +86,37 @@ for trial=1:size(leftClass,1)
     overallLeft = [overallLeft squeeze(leftClass(trial,:,:))];
     overallRight = [overallRight squeeze(rightClass(trial,:,:))];
 end
-vizTrial = 11;       % cherry-picked!
+
+%% Split into training and test sets:
+idleIdx = find(targetLabels == 3);                                  % find idle trials
+leftIdx = find(targetLabels == 1);                                  % find left trials
+rightIdx = find(targetLabels == 2);                                 % find right trials
+
+testIdx = randperm(length(idleIdx),num4test);                       % picking test index randomly
+testIdx = [idleIdx(testIdx) leftIdx(testIdx) rightIdx(testIdx)];    % taking the test index from each class
+testIdx = sort(testIdx);                                            % sort the trials
+
+% split test data
+cspOverallLeft = overallLeft(testIdx,:,:); % take the test trials from left class
+cspOVerallRight = overallRight(testIdx,:,:); % take the test trials from right class
+
+% visualize the CSP data:
+vizTrial = 11;      % cherry-picked!
 figure;
 subplot(1,2,1)      % show a single trial before CSP seperation
-scatter3(squeeze(leftClass(vizTrial,1,:)),squeeze(leftClass(vizTrial,2,:)),squeeze(leftClass(vizTrial,3,:)),'b'); hold on
-scatter3(squeeze(rightClass(vizTrial,1,:)),squeeze(rightClass(vizTrial,2,:)),squeeze(rightClass(vizTrial,3,:)),'g');
+scatter3(squeeze(cspOverallLeft(vizTrial,1,:)),squeeze(cspOverallLeft(vizTrial,2,:)),squeeze(cspOverallLeft(vizTrial,3,:)),'b'); hold on
+scatter3(squeeze(cspOVerallRight(vizTrial,1,:)),squeeze(cspOVerallRight(vizTrial,2,:)),squeeze(cspOVerallRight(vizTrial,3,:)),'g');
 title('Before CSP')
 legend('Left','Right')
 xlabel('channel 1')
 ylabel('channel 2')
 zlabel('channel 3')
 % find mixing matrix (W) for all trials
-[W, lambda, A] = csp(overallLeft, overallRight);
-[Wviz, lambdaViz, Aviz] = csp(squeeze(rightClass(vizTrial,:,:)), squeeze(leftClass(vizTrial,:,:)));
+[W, lambda, A] = csp(cspOverallLeft, cspOverallRight);
+[Wviz, lambdaViz, Aviz] = csp(squeeze(cspOverallRight(vizTrial,:,:)), squeeze(cspOverallLeft(vizTrial,:,:)));
 % apply mixing matrix on available data (for visualization)
-leftClassCSP = (Wviz'*squeeze(leftClass(vizTrial,:,:)));
-rightClassCSP = (Wviz'*squeeze(rightClass(vizTrial,:,:)));
+leftClassCSP = (Wviz'*squeeze(cspOverallLeft(vizTrial,:,:)));
+rightClassCSP = (Wviz'*squeeze(cspOverallRight(vizTrial,:,:)));
 
 subplot(1,2,2)      % show a single trial aftler CSP seperation
 scatter3(squeeze(leftClassCSP(1,:)),squeeze(leftClassCSP(2,:)),squeeze(leftClassCSP(3,:)),'b'); hold on
@@ -242,16 +257,6 @@ MIFeatures = reshape(MIFeaturesLabel,trials,[]);
 MIFeatures = [CSPFeatures MIFeatures];              % add the CSP features to the overall matrix
 AllDataInFeatures = MIFeatures;
 save(strcat(recordingFolder,'\AllDataInFeatures.mat'),'AllDataInFeatures');
-
-%% Split to training and test sets
-
-idleIdx = find(targetLabels == 1);                                  % find idle trials
-leftIdx = find(targetLabels == 2);                                  % find left trials
-rightIdx = find(targetLabels == 3);                                 % find right trials
-
-testIdx = randperm(length(idleIdx),num4test);                       % picking test index randomly
-testIdx = [idleIdx(testIdx) leftIdx(testIdx) rightIdx(testIdx)];    % taking the test index from each class
-testIdx = sort(testIdx);                                            % sort the trials
 
 % split test data
 FeaturesTest = MIFeatures(testIdx,:,:);     % taking the test trials features from each class
