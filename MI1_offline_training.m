@@ -93,7 +93,6 @@ pause(InitWait)
 cla
 for trial = 1:totalTrials
     outletStream.push_sample(startTrial);       % trial trigger & counter
-    startTrial = startTrial + trial;    
     currentClass = trainingVec(trial);          % What class is it?
     
     % Cue before ready
