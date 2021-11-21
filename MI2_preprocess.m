@@ -21,7 +21,7 @@ addpath 'C:\Toolboxes\eeglab2020_0'           % update to your own computer path
 eeglab;                                     % open EEGLAB 
 highLim = 40;                               % filter data under 40 Hz
 lowLim = 0.5;                               % filter data above 0.5 Hz
-recordingFile = strcat(recordingFolder,'\EEG.XDF');
+recordingFile = strcat(recordingFolder,'/EEG.XDF');
 
 % (1) Load subject data (assume XDF)
 EEG = pop_loadxdf(recordingFile, 'streamtype', 'EEG', 'exclude_markerstreams', {});
@@ -63,8 +63,8 @@ EEG = eeg_checkset( EEG );
 % Save the data into .mat variables on the computer
 EEG_data = EEG.data;            % Pre-processed EEG data
 EEG_event = EEG.event;          % Saved markers for sorting the data
-save(strcat(recordingFolder,'\','cleaned_sub.mat'),'EEG_data');
-save(strcat(recordingFolder,'\','EEG_events.mat'),'EEG_event');
-save(strcat(recordingFolder,'\','EEG_chans.mat'),'EEG_chans');
+save(strcat(recordingFolder,'/','cleaned_sub.mat'),'EEG_data');
+save(strcat(recordingFolder,'/','EEG_events.mat'),'EEG_event');
+save(strcat(recordingFolder,'/','EEG_chans.mat'),'EEG_chans');
                 
 end
