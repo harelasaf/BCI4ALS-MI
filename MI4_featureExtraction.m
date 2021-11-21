@@ -89,13 +89,13 @@ idleIdx = find(targetLabels == 3);                  % find idle trials
 leftIdx = find(targetLabels == 1);                  % find left trials
 rightIdx = find(targetLabels == 2);                 % find right trials
 rightIndices = rightIdx(randperm(length(rightIdx)));% randomize right indexs
-leftIndices = leftIdx(randperm(length(leftIdx)));   % randomize left indexs
-idleIndices = idleIdx(randperm(length(idleIdx)));   % randomize idle indexs
+leftIndices  = leftIdx(randperm(length(leftIdx)));   % randomize left indexs
+idleIndices  = idleIdx(randperm(length(idleIdx)));   % randomize idle indexs
 minTrials = min([length(leftIndices), length(rightIndices)]);
-percentRightIdx = floor(0.8*minTrials);             % this is the 80% part...
-for trial=1:percentRightIdx
-    overallLeft = [overallLeft squeeze(leftClass(leftIndices(trial),:,:))];
-    overallRight = [overallRight squeeze(rightClass(rightIndices(trial),:,:))];
+percentIdx = floor(0.8*minTrials);                  % this is the 80% part...
+for trial=1:percentIdx
+    overallLeft = [overallLeft squeeze(MIData(leftIndices(trial),:,:))];
+    overallRight = [overallRight squeeze(MIData(rightIndices(trial),:,:))];
 end
 
 % visualize the CSP data:
