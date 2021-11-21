@@ -15,7 +15,7 @@ function [] = MI4_featureExtraction(recordingFolder)
 %% Load previous variables:
 load(strcat(recordingFolder,'EEG_chans.mat'));                  % load the openBCI channel location
 load(strcat(recordingFolder,'MIData.mat'));                     % load the EEG data
-targetLabels = cell2mat(struct2cell(load(strcat(recordingFolder,'\trainingVec'))));
+targetLabels = cell2mat(struct2cell(load(strcat(recordingFolder,'/trainingVec'))));
 
 Features2Select = 10;                                           % number of featuers for feature selection
 num4test = 5;                                                   % define how many test trials after feature extraction
@@ -68,56 +68,56 @@ end
 % manually plot (surf) mean spectrogram for channels C4 + C3:
 mySpectrogram(t,spectFreq,totalSpect,numClasses,vizChans,EEG_chans)
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%% Add your own data visualization here %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
 %% Common Spatial Patterns
 % create a spatial filter using available EEG & labels
-% begin by splitting into two classes:
+% we will "train" a mixing matrix (wTrain) on 80% of the trials and another
+% mixing matrix (wViz) just for the visualization trial (vizTrial). This
+% serves to show an understandable demonstration of the process.
+
+% Begin by splitting into two classes:
 leftClass = MIData(targetLabels == 1,:,:);
 rightClass = MIData(targetLabels == 2,:,:);
-% aggregate all trials into one matrix
+
+% Aggregate all trials into one matrix
 overallLeft = [];
 overallRight = [];
-for trial=1:size(leftClass,1)
-    overallLeft = [overallLeft squeeze(leftClass(trial,:,:))];
-    overallRight = [overallRight squeeze(rightClass(trial,:,:))];
+idleIdx = find(targetLabels == 3);                  % find idle trials
+leftIdx = find(targetLabels == 1);                  % find left trials
+rightIdx = find(targetLabels == 2);                 % find right trials
+rightIndices = rightIdx(randperm(length(rightIdx)));% randomize right indexs
+leftIndices = leftIdx(randperm(length(leftIdx)));   % randomize left indexs
+idleIndices = idleIdx(randperm(length(idleIdx)));   % randomize idle indexs
+minTrials = min([length(leftIndices), length(rightIndices)]);
+percentRightIdx = floor(0.8*minTrials);             % this is the 80% part...
+for trial=1:percentRightIdx
+    overallLeft = [overallLeft squeeze(leftClass(leftIndices(trial),:,:))];
+    overallRight = [overallRight squeeze(rightClass(rightIndices(trial),:,:))];
 end
-
-% Split into training and test sets:
-idleIdx = find(targetLabels == 3);                                  % find idle trials
-leftIdx = find(targetLabels == 1);                                  % find left trials
-rightIdx = find(targetLabels == 2);                                 % find right trials
-
-rightIndices = randperm(length(rightIdx));
-percentRightIdx = floor(0.8*length(rightIdx));
-trainOVerallRight = overallRight(rightIndices(1:percentRightIdx),:);
-leftIndices = randperm(length(leftIdx));
-percentLeftIdx = floor(0.8*length(leftIdx));
-trainOverallLeft = overallLeft(leftIndices(1:percentLeftIdx),:);
 
 % visualize the CSP data:
 vizTrial = 11;      % cherry-picked!
 figure;
 subplot(1,2,1)      % show a single trial before CSP seperation
-scatter3(squeeze(trainOverallLeft(vizTrial,1,:)),squeeze(trainOverallLeft(vizTrial,2,:)),squeeze(trainOverallLeft(vizTrial,3,:)),'b'); hold on
-scatter3(squeeze(trainOVerallRight(vizTrial,1,:)),squeeze(trainOVerallRight(vizTrial,2,:)),squeeze(trainOVerallRight(vizTrial,3,:)),'g');
+scatter3(squeeze(leftClass(vizTrial,1,:)),squeeze(leftClass(vizTrial,2,:)),squeeze(leftClass(vizTrial,3,:)),'b'); hold on
+scatter3(squeeze(rightClass(vizTrial,1,:)),squeeze(rightClass(vizTrial,2,:)),squeeze(rightClass(vizTrial,3,:)),'g');
 title('Before CSP')
 legend('Left','Right')
 xlabel('channel 1')
 ylabel('channel 2')
 zlabel('channel 3')
-% find mixing matrix (W) for all trials
-[W, lambda, A] = csp(trainOverallLeft, cspOverallRight);
-[Wviz, lambdaViz, Aviz] = csp(squeeze(cspOverallRight(vizTrial,:,:)), squeeze(trainOverallLeft(vizTrial,:,:)));
+% find mixing matrix (wAll) for all trials:
+[wTrain, lambda, A] = csp(overallLeft, overallRight);
+% find mixing matrix (wViz) just for visualization trial:
+[wViz, lambdaViz, Aviz] = csp(squeeze(rightClass(vizTrial,:,:)), squeeze(leftClass(vizTrial,:,:)));
 % apply mixing matrix on available data (for visualization)
-leftClassCSP = (Wviz'*squeeze(trainOverallLeft(vizTrial,:,:)));
-rightClassCSP = (Wviz'*squeeze(cspOverallRight(vizTrial,:,:)));
+leftClassCSP = (wViz'*squeeze(leftClass(vizTrial,:,:)));
+rightClassCSP = (wViz'*squeeze(rightClass(vizTrial,:,:)));
 
-subplot(1,2,2)      % show a single trial aftler CSP seperation
+subplot(1,2,2)      % show a single trial after CSP seperation
 scatter3(squeeze(leftClassCSP(1,:)),squeeze(leftClassCSP(2,:)),squeeze(leftClassCSP(3,:)),'b'); hold on
 scatter3(squeeze(rightClassCSP(1,:)),squeeze(rightClassCSP(2,:)),squeeze(rightClassCSP(3,:)),'g');
 title('After CSP')
@@ -150,7 +150,7 @@ MIFeaturesLabel = NaN(trials,numChans,numSpectralFeatures); % init features + la
 for trial = 1:trials                                % run over all the trials
     
     % CSP: using W computed above for all channels at once
-    temp = var((W'*squeeze(MIData(trial,:,:)))');   % apply the CSP filter on the current trial EEG data
+    temp = var((wTrain'*squeeze(MIData(trial,:,:)))');   % apply the CSP filter on the current trial EEG data
     CSPFeatures(trial,:) = temp(1:3);               % add the variance from the first 3 eigenvalues
     clear temp                                      % clear the variable to free it for the next loop
     
@@ -255,7 +255,7 @@ MIFeaturesLabel = zscore(MIFeaturesLabel);
 MIFeatures = reshape(MIFeaturesLabel,trials,[]);
 MIFeatures = [CSPFeatures MIFeatures];              % add the CSP features to the overall matrix
 AllDataInFeatures = MIFeatures;
-save(strcat(recordingFolder,'\AllDataInFeatures.mat'),'AllDataInFeatures');
+save(strcat(recordingFolder,'/AllDataInFeatures.mat'),'AllDataInFeatures');
 
 testIdx = randperm(length(idleIdx),num4test);                       % picking test index randomly
 testIdx = [idleIdx(testIdx) leftIdx(testIdx) rightIdx(testIdx)];    % taking the test index from each class
@@ -280,12 +280,12 @@ SelectedIdx = selected(1:Features2Select);
 FeaturesTrainSelected = FeaturesTrain(:,SelectedIdx);       % updating the matrix feature
 FeaturesTest = FeaturesTest(:,SelectedIdx);                 % updating the matrix feature
 % saving
-save(strcat(recordingFolder,'\FeaturesTrain.mat'),'FeaturesTrain');
-save(strcat(recordingFolder,'\FeaturesTrainSelected.mat'),'FeaturesTrainSelected');
-save(strcat(recordingFolder,'\FeaturesTest.mat'),'FeaturesTest');
-save(strcat(recordingFolder,'\SelectedIdx.mat'),'SelectedIdx');
-save(strcat(recordingFolder,'\LabelTest.mat'),'LabelTest');
-save(strcat(recordingFolder,'\LabelTrain.mat'),'LabelTrain');
+save(strcat(recordingFolder,'/FeaturesTrain.mat'),'FeaturesTrain');
+save(strcat(recordingFolder,'/FeaturesTrainSelected.mat'),'FeaturesTrainSelected');
+save(strcat(recordingFolder,'/FeaturesTest.mat'),'FeaturesTest');
+save(strcat(recordingFolder,'/SelectedIdx.mat'),'SelectedIdx');
+save(strcat(recordingFolder,'/LabelTest.mat'),'LabelTest');
+save(strcat(recordingFolder,'/LabelTrain.mat'),'LabelTrain');
 
 disp('Successfuly extracted features!');
 
