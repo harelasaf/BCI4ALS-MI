@@ -1,0 +1,8 @@
+function [params] = set_params()
+
+% This function sets up the different parameters for the MI Online Learning
+
+params.feedbackFlag = 1;                                   % 1-with feedback, 0-no feedback
+params.Fs = 125;                                           % openBCI sample rate % Fs = 300;  % Wearable Sensing sample rate
+params.bufferLength = 5;                                   % how much data (in seconds) to buffer for each classification
+params.numVotes = 3;                                     % how many consecutive votes before classification?
