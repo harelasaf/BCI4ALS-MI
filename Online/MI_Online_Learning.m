@@ -2,9 +2,13 @@
 %% MI Online Scaffolding
 % This code creates an online EEG buffer which utilizes the model trained
 % offline, and corresponding conditions, to classify between the possible labels.
+% Furthermore, this code adds an "online learning" phase in which the
+% subject is shown a specific label which she/he should imagine. After a
+% defined amount of labeled trials, the classifier is updated.
+
 % Assuming: 
-% 1. EEG is recorded using Wearable Sensing / openBCI and streamed through LSL.
-% 2. MI classifier has been trained
+% 1. EEG is recorded using openBCI and streamed through LSL.
+% 2. A preliminary MI classifier has been trained.
 % 3. A different machine/client is reading this LSL oulet stream for the commands sent through this code
 % 4. Target labels are [-1 0 1] (left idle right)
 
@@ -16,7 +20,12 @@
 % one side (or idle) with a confidence bar showing the classification being made.
 % 3. Advanced = add an online reinforcement code that updates the
 % classifier with the wrong & right class classifications.
+% 4. Add a serial classifier which predicts attention levels and updates
+% the classifier only if "focus" is above a certain threshold.
 
+%% This code is part of the BCI-4-ALS Course written by Asaf Harel
+% (harelasa@post.bgu.ac.il) in 2021. You are free to use, change, adapt and
+% so on - but please cite properly if published.
 
 clearvars % change to clear all?
 close all
@@ -28,30 +37,16 @@ addpath('YOUR LSL FOLDER PATH HERE');
     
 %% Set params - %add to different function/file returns param.struct
 params = set_params();
-load('releventFreqs.mat');                          % load best features from extraction & selection stage
+load('releventFeatures.mat');                       % load best features from extraction & selection stage
 load('trainedModel.mat');                           % load model weights from offline section
 % Load cue images
-images(1,:,:,:) = imread(params.leftImageName, 'jpeg');
-images(2,:,:,:) = imread(params.squareImageName, 'jpeg');
-images(3,:,:,:) = imread(params.rightImageName, 'jpeg');
+images{1} = imread(params.leftImageName, 'jpeg');
+images{2} = imread(params.squareImageName, 'jpeg');
+images{3} = imread(params.rightImageName, 'jpeg');
 cueVec = prepareTraining(numTrials,numConditions);  % prepare the cue vector
 
-%% Lab Streaming Layer Init - FIXME turn into a seperate function
-fprintf('Loading the Lab Streaming Layer library...');
-lib = lsl_loadlib();
-% Initialize the command outlet marker stream
-fprintf('Opening Output Stream...');
-info = lsl_streaminfo(lib,'MarkerStream','Markers',1,0,'cf_string','asafMIuniqueID123123');
-command_Outlet = lsl_outlet(info);
-% Initialize the EEG inlet stream (from DSI2LSL/openBCI on different system)
-fprintf('Resolving an EEG Stream...');
-result = {};
-lslTimer = tic;
-while isempty(result) && toc(lslTimer) < params.resolveTime % FIXME add some stopping condition
-    result = lsl_resolve_byprop(lib,'type','EEG'); 
-end
-fprintf('Success resolving!');
-EEG_Inlet = lsl_inlet(result{1});
+%% Lab Streaming Layer Init
+[command_Outlet, EEG_Inlet] = LSL_Init;
 
 %% Initialize some more variables:
 myPrediction = [];                                  % predictions vector
@@ -61,50 +56,59 @@ motorData = [];                                     % post-laPlacian matrix
 decCount = 0;                                       % decision counter
 
 %% 
-pause(params.bufferPause);                                         % give the system some time to buffer data
+pause(params.bufferPause);                          % give the system some time to buffer data
 myChunk = EEG_Inlet.pull_chunk();                   % get a chunk from the EEG LSL stream to get the buffer going
 
-%% Psychtoolbox, Stim, Screen Params Init:
-fprintf('Setting up Psychtoolbox parameters...');
-fprintf('This will open a black screen - good luck!');
-% This function will make the Psychtoolbox window semi-transparent:
-PsychDebugWindowConfiguration(0,0.5);               % Use this to debug the psychtoolbox screen
-
-[window,white,~,~,screenYpixels,~,~,ifi] = PsychInit();
-topPriorityLevel = MaxPriority(window);
-Priority(topPriorityLevel);                         % set highest priority for screen processes
-vbl = Screen('Flip', window);                       % get the vertical beam line
-% FIXME move to params:
-waitFrames = 1;                                     % how many frames to wait for between screen refresh.
-
-%% Define the keyboard keys that are listened for:
-KbName('UnifyKeyNames');
-escapeKey = KbName('Escape');                   % let psychtoolbox know what the escape key is
-HideCursor;                                     % hides cursor on screen
+%% Screen Setup 
+monitorPos = get(0,'MonitorPositions'); % monitor position and number of monitors
+monitorN = size(monitorPos, 1);
+choosenMonitor = 1;                     % which monitor to use TODO: make a parameter                                 
+if choosenMonitor < monitorN            % if no 2nd monitor found, use the main monitor
+    choosenMonitor = 1;
+    disp('Another monitored is not detected, using main monitor.')
+end
+figurePos = monitorPos(choosenMonitor, :);  % get choosen monitor position
+figure('outerPosition',figurePos);          % open full screen monitor
+MainFig = gcf;                              % get the figure and axes handles
+hAx  = gca;
+set(hAx,'Unit','normalized','Position',[0 0 1 1]); % set the axes to full screen
+set(MainFig,'menubar','none');              % hide the toolbar   
+set(MainFig,'NumberTitle','off');           % hide the title
+set(hAx,'color', 'black');                  % set background color
+hAx.XLim = [0, 1];                          % lock axes limits
+hAx.YLim = [0, 1];
+hold on
 
 %% This is the main online script
 
 for trial = 1:numTrials
-    
-    Screen('TextSize', window, 70);             % Draw text in the bottom portion of the screen in white
-    DrawFormattedText(window, 'Ready', 'center',screenYpixels * 0.75, white);
-    Screen('Flip', window);
-    pause(1.5);                                 % "Ready" stays on screen
-    Screen('PutImage', window, squeeze(images(cueVec(trial),:,:,:))); % put image on screen
-    Screen('Flip',window);                      % now visible on screen
+    command_Outlet.push_sample(params.startTrialMarker)
+    currentClass = cueVec(trial);
+    % ready cue
+    text(0.5,0.5 , 'Ready',...
+        'HorizontalAlignment', 'Center', 'Color', 'white', 'FontSize', 40);        
+    pause(params.readyLength)
+    % display target cue
+    image(flip(images{currentClass}, 1)  'XData', [0.25, 0.75],...
+        'YData', [0.25, 0.75 * ...
+        size(images{currentClass},1) ./ size(images{currentClass},2)])
+    pause(params.cueLength);                           % Pause for cue length
+    cla                                         % Clear axis
+    % ready cue
+    text(0.5,0.5 , 'Ready',...
+        'HorizontalAlignment', 'Center', 'Color', 'white', 'FontSize', 40);        
+    pause(params.readyLength)
     
     trialStart = tic;
     while toc(trialStart) < trialTime
         iteration = iteration + 1;                  % count iterations
         
         myChunk = EEG_Inlet.pull_chunk();           % get data from the inlet
-        
-        % FIXME - add through "switch" "case". 
-        % next 2 lines are relevant for Wearable Sensing only:
-        %     myChunk = myChunk - myChunk(21,:);              % re-reference to ear channel (21)
-        %     myChunk = myChunk([1:15,18,19,22:23],:);        % removes X1,X2,X3,TRG,A2
+
         pause(0.1)
-        % add comment explaining WTF below
+        % check if myChunk is empty and print status, also
+        % apply LaPlacian filter on current chunk of data and apped to
+        % local buffer:
         if ~isempty(myChunk)
             % Apply LaPlacian Filter (based on default electrode placement for Wearable Sensing - change it to your electrode locations)
             motorData(1,:) = myChunk(2,:) - ((myChunk(8,:) + myChunk(3,:) + myChunk(1,:) + myChunk(13,:))./4);    % LaPlacian (Cz, F3, P3, T3)
@@ -152,11 +156,14 @@ for trial = 1:numTrials
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             [final_vote] = sendVote(myPrediction);
             
-            % Update classifier - this should be done very gently! (and
-            % mostly relevent to neural nets.
+            % Update classifier - this should be done very gently! 
             if final_vote ~= (cueVec(trial)-numConditions-1)
                 wrongClass(decCount,:,:) = EEG_Features;
                 wrongClassLabel(decCount) = cueVec(trial);
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                %%% Write a function that updates the trained model %%%%%%%
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                trainedModel = OnlineLearn(trainedModel,EEG_Features,currentClass);
             else
                 correctClass(decCount,:,:) = EEG_Features;
                 correctLabel(decCount) = cueVec(trial);
@@ -169,9 +176,5 @@ for trial = 1:numTrials
         end
     end
 end
-%% Update Classifier using wrongClass & correctClass labels
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% This is not trivial & depends on your classification  %%
-%%           algorithm, "co-learning"                    %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% rmpath - remove the added path from the beginning
+disp('Finished')
+command_Outlet.pushSample(params.endTrial);

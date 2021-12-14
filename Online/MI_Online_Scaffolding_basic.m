@@ -17,6 +17,10 @@
 % one side (or idle) with a confidence bar showing the classification being
 % made.
 
+%% This code is part of the BCI-4-ALS Course written by Asaf Harel
+% (harelasa@post.bgu.ac.il) in 2021. You are free to use, change, adapt and
+% so on - but please cite properly if published.
+
 clearvars
 close all
 clc

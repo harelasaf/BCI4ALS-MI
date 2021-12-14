@@ -13,6 +13,12 @@ params.squareImageName = 'square.jpeg';
 params.numTrials = 5;               % number of trials overall
 params.trialTime = 240;             % duration of each trial in seconds
 params.bufferPause = 0.2;           % pause before first pull.chunk
-
+params.startTrialMarker = 111;      % marker sent to command outlet to indicate start of trial
+params.commandLeft = -1;            % left command
+params.commandRight = 1;            % right command
+params.commandIdle = 0;             % idle command
+params.readyLength = 1.5;           % time (s) showing "Ready" on screen
+params.cueLength = 1;               % time (s) showing the cue before trial start
+params.endTrial = 999;              % marker sent to command outlet to indicate end of process
 end
 
