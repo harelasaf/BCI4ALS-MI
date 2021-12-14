@@ -2,10 +2,11 @@
 %% MI Online Scaffolding
 % This code creates an online EEG buffer which utilizes the model trained
 % offline, and corresponding conditions, to classify between the possible labels.
-% Assuming: 
-% 1. EEG is recorded using Wearable Sensing / openBCI and streamed through LSL.
-% 2. MI classifier has been trained
-% 3. A different machine/client is reading this LSL oulet stream for the commands sent through this code
+% Assuming:
+% 1. EEG is recorded using openBCI and streamed through LSL.
+% 2. MI classifier has been previously trained.
+% 3. A different machine/client is reading the LSL oulet stream in this
+% code for the these commands.
 % 4. Target labels are [-1 0 1] (left idle right)
 
 % Remaining to be done:
@@ -26,12 +27,11 @@ addpath('YOUR LSL FOLDER PATH HERE');
     
 %% Set params
 feedbackFlag = 1;                                   % 1-with feedback, 0-no feedback
-% Fs = 300;                                         % Wearable Sensing sample rate
 Fs = 125;                                           % openBCI sample rate
 bufferLength = 5;                                   % how much data (in seconds) to buffer for each classification
 % numVotes = 3;                                     % how many consecutive votes before classification?
-load(strcat(recordingFolder,'releventFreqs.mat'));  % load best features from extraction & selection stage
-load(strcat(recordingFolder,'trainedModel.mat'));   % load model weights from offline section
+load('releventFeatures.mat');                          % load best features from extraction & selection stage
+load('trainedModel.mat');                           % load model weights from offline section
 numConditions = 3;                                  % possible conditions - left/right/idle 
 
 
@@ -43,7 +43,7 @@ disp('Opening Output Stream...');
 info = lsl_streaminfo(lib,'MarkerStream','Markers',1,0,'cf_string','asafMIuniqueID123123');
 command_Outlet = lsl_outlet(info);
 
-% Initialize the EEG inlet stream (from DSI2LSL/openBCI on different system)
+% Initialize the EEG inlet stream (from openBCI on different system/client)
 disp('Resolving an EEG Stream...');
 result = {};
 while isempty(result)
@@ -61,6 +61,9 @@ decInd = 0;                                         % decision counter
 
 pause(0.2);                                         % give the system some time to buffer data
 myChunk = EEG_Inlet.pull_chunk();                   % get a chunk from the EEG LSL stream to get the buffer going
+%% the "EEG_Inlet.pull_chunk" command is useful for taking data that has been buffering in the LSL stream.
+% If using .pull_sample command, a single sample (the last one in the pile)
+% will be pulled into the "myChunk" variable.
 
 %% This is the main online script
 
@@ -68,29 +71,27 @@ while true                                          % run continuously
     iteration = iteration + 1;                      % count iterations
     myChunk = EEG_Inlet.pull_chunk();               % get data from the inlet
     
-    % next 2 lines are relevant for Wearable Sensing only:
-%     myChunk = myChunk - myChunk(21,:);              % re-reference to ear channel (21)
-%     myChunk = myChunk([1:15,18,19,22:23],:);        % removes X1,X2,X3,TRG,A2    
-    
     pause(0.1)
     if ~isempty(myChunk)
         % Apply LaPlacian Filter (based on default electrode placement)
+        %%%%%% UPDATE THESE INDECES TO YOUR EEG SETUP %%%%%%%%
         motorData(1,:) = myChunk(2,:) - ((myChunk(8,:) + myChunk(3,:) + myChunk(1,:) + myChunk(13,:))./4);    % LaPlacian (Cz, F3, P3, T3)
         motorData(2,:) = myChunk(6,:) - ((myChunk(8,:) + myChunk(5,:) + myChunk(7,:) + myChunk(19,:))./4);    % LaPlacian (Cz, F4, P4, T4)
         
-        myBuffer = [myBuffer motorData];              % append new data to the current buffer
-        motorData = [];
+        myBuffer = [myBuffer motorData];            % append new data to the current buffer
+        motorData = [];                             % clear motorData variable
     else
         disp(strcat('Houston, we have a problem. Iteration:',num2str(iteration),' did not have any data.'));
     end
     
-    % Check if buffer size exceeds the buffer length 
+    % Check if buffer size exceeds the defined buffer length 
     if (size(myBuffer,2)>(bufferLength*Fs))
-        decInd = decInd + 1;
-        block = [myBuffer];
+        decInd = decInd + 1;                        % increase decision counter.
+        block = [myBuffer];                         % move data into "block" variable
         
+        %%%%%% UPDATE FILTERS TO YOUR OWN %%%%%%%
         % Pre-process the data
-        block = lowpass(block',40,Fs)';
+        block = lowpass(block',40,Fs)';             % this filters the data from 0.3 to 40 Hz            
         block = highpass(block',0.3,Fs)';
         
         % Extract features from the buffered block:
@@ -114,10 +115,11 @@ while true                                          % run continuously
         disp(strcat('Iteration:', num2str(iteration)));
         disp(strcat('The estimated target is:', num2str(myPrediction(decInd))));        
        
+
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % write a function that sends the estimate to the voting machine %%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        [final_vote] = sendVote(myEstimate);
+        [final_vote] = sendVote(decInd,numVotes,myPrediction);
         
         % Send command through LSL:
         command_Outlet.push_sample(final_vote);
