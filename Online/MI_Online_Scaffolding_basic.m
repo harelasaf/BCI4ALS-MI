@@ -9,7 +9,7 @@
 % code for the these commands.
 % 4. Target labels are [-1 0 1] (left idle right)
 
-% Remaining to be done:
+% Remains to be done:
 % 1. Add a "voting machine" which takes the classification and counts how
 % many consecutive answers in the same direction / target to get a high(er)
 % accuracy rate, even though it slows down the process by a large factor.
@@ -34,8 +34,8 @@ feedbackFlag = 1;                                   % 1-with feedback, 0-no feed
 Fs = 125;                                           % openBCI sample rate
 bufferLength = 5;                                   % how much data (in seconds) to buffer for each classification
 % numVotes = 3;                                     % how many consecutive votes before classification?
-load('releventFeatures.mat');                          % load best features from extraction & selection stage
-load('trainedModel.mat');                           % load model weights from offline section
+load('releventFeatures.mat');                       % load best features from extraction & selection stage
+load('trainedModel.mat');                           % load model weights from offline stage
 numConditions = 3;                                  % possible conditions - left/right/idle 
 
 
@@ -47,13 +47,13 @@ disp('Opening Output Stream...');
 info = lsl_streaminfo(lib,'MarkerStream','Markers',1,0,'cf_string','asafMIuniqueID123123');
 command_Outlet = lsl_outlet(info);
 
-% Initialize the EEG inlet stream (from openBCI on different system/client)
+% Initialize the EEG inlet stream (from openBCI)
 disp('Resolving an EEG Stream...');
 result = {};
 while isempty(result)
     result = lsl_resolve_byprop(lib,'type','EEG'); 
 end
-disp('Success resolving!');
+disp('Success resolving EEG stream!');
 EEG_Inlet = lsl_inlet(result{1});
 
 %% Initialize some more variables:
@@ -61,11 +61,11 @@ myPrediction = [];                                  % predictions vector
 myBuffer = [];                                      % buffer matrix
 iteration = 0;                                      % iteration counter
 motorData = [];                                     % post-laPlacian matrix
-decInd = 0;                                         % decision counter
+decIdx = 0;                                         % decision index
 
 pause(0.2);                                         % give the system some time to buffer data
 myChunk = EEG_Inlet.pull_chunk();                   % get a chunk from the EEG LSL stream to get the buffer going
-%% the "EEG_Inlet.pull_chunk" command is useful for taking data that has been buffering in the LSL stream.
+% the "EEG_Inlet.pull_chunk" command is useful for taking data that has been buffering in the LSL stream.
 % If using .pull_sample command, a single sample (the last one in the pile)
 % will be pulled into the "myChunk" variable.
 
@@ -76,21 +76,22 @@ while true                                          % run continuously
     myChunk = EEG_Inlet.pull_chunk();               % get data from the inlet
     
     pause(0.1)
-    if ~isempty(myChunk)
+    if ~isempty(myChunk)                            % check if myChunk has any data
         % Apply LaPlacian Filter (based on default electrode placement)
         %%%%%% UPDATE THESE INDECES TO YOUR EEG SETUP %%%%%%%%
         motorData(1,:) = myChunk(2,:) - ((myChunk(8,:) + myChunk(3,:) + myChunk(1,:) + myChunk(13,:))./4);    % LaPlacian (Cz, F3, P3, T3)
         motorData(2,:) = myChunk(6,:) - ((myChunk(8,:) + myChunk(5,:) + myChunk(7,:) + myChunk(19,:))./4);    % LaPlacian (Cz, F4, P4, T4)
-        
+        % motorData now has only 2 channels after the LaPlacian filtering.
         myBuffer = [myBuffer motorData];            % append new data to the current buffer
         motorData = [];                             % clear motorData variable
     else
+        % this means that the pull_chunk command didn't get any data:
         disp(strcat('Houston, we have a problem. Iteration:',num2str(iteration),' did not have any data.'));
     end
     
     % Check if buffer size exceeds the defined buffer length 
     if (size(myBuffer,2)>(bufferLength*Fs))
-        decInd = decInd + 1;                        % increase decision counter.
+        decIdx = decIdx + 1;                        % increase decision counter.
         block = [myBuffer];                         % move data into "block" variable
         
         %%%%%% UPDATE FILTERS TO YOUR OWN %%%%%%%
@@ -108,7 +109,7 @@ while true                                          % run continuously
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%% Use whatever classfication method used in offline MI %%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        myPrediction(decInd) = trainedModel.predictFcn(EEG_Features);
+        myPrediction(decIdx) = trainedModel.predictFcn(EEG_Features);
         
         if feedbackFlag
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -117,13 +118,13 @@ while true                                          % run continuously
             plotEstimate(myPrediction); hold on
         end
         disp(strcat('Iteration:', num2str(iteration)));
-        disp(strcat('The estimated target is:', num2str(myPrediction(decInd))));        
+        disp(strcat('The estimated target is:', num2str(myPrediction(decIdx))));        
        
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % write a function that sends the estimate to the voting machine %%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        [final_vote] = sendVote(decInd,numVotes,myPrediction);
+        [final_vote] = sendVote(decIdx,numVotes,myPrediction);
         
         % Send command through LSL:
         command_Outlet.push_sample(final_vote);
