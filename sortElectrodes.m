@@ -13,7 +13,7 @@ function [dataVar] = sortElectrodes(dataVar, EEG_data, EEG_event, Fs, trialLengt
 % For each channel, take data from the marker (+FS*0.1) to trialLength-FS*0.1
 % (buffer). Feel free to add a buffer as needed...
 for channel=1:numChans
-    dataVar(trial,channel,:) = EEG_data(channel,(EEG_event(markIndex).latency*Fs/1000) : (EEG_event(markIndex).latency*Fs/1000 + Fs*(trialLength)));    
+    dataVar(trial,channel,:) = EEG_data(channel,(EEG_event(markIndex).latency) : (EEG_event(markIndex).latency + Fs*(trialLength)));    
 end
 
 
